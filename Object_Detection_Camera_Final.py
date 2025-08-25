@@ -1,5 +1,3 @@
-# Camera capture script to detect birds using MobileNetSSD and send frames to the FastAPI backend
-
 import numpy as np
 import cv2
 import os
@@ -7,68 +5,62 @@ from datetime import datetime
 import time
 import base64
 import requests
+from picamera2 import Picamera2
+from ultralytics import YOLO
+from PIL import Image
 
 # --- Configuration ---
-prototxt_path = 'models/MobileNetSSD_deploy.prototxt'
-model_path = 'models/MobileNetSSD_deploy.caffemodel'
-min_confidence = 0.2
-
-classes = ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
-           "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"]
-
-colors = np.random.uniform(0, 255, size=(len(classes), 3))
-
-net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
+model_path = 'yolov8n.pt'  # Make sure this model is downloaded
+min_confidence = 0.3
 
 # API Endpoint
-API_URL = "http://localhost:8000/process-image"
+API_URL = "http://192.168.1.152:8000/process-image"
 
 # Output directory
 output_dir = 'output_images'
 os.makedirs(output_dir, exist_ok=True)
 
-# Start camera
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("Error: Could not open camera.")
-    exit()
+# Load YOLOv8 model
+model = YOLO(model_path)
+print("YOLOv8 model loaded.")
+
+# Start camera using Picamera2
+picam2 = Picamera2()
+picam2.configure(picam2.create_preview_configuration(main={"format": "RGB888", "size": (640, 480)}))
+picam2.start()
 
 print("Camera opened successfully. Detecting birds...")
 
 last_capture_time = time.time()
-capture_interval = 2  # seconds
+capture_interval = 1  # seconds
 
 while True:
-    ret, image = cap.read()
-    if not ret:
+    image = picam2.capture_array()
+    if image is None:
         print("Failed to grab frame. Exiting...")
         break
 
-    height, width = image.shape[:2]
-    blob = cv2.dnn.blobFromImage(cv2.resize(image, (300, 300)), 0.007, (300, 300), 130)
-    net.setInput(blob)
-    detections = net.forward()
+    results = model.predict(image, verbose=False)[0]
 
     bird_detected = False
 
-    for i in range(detections.shape[2]):
-        confidence = detections[0, 0, i, 2]
-        if confidence > min_confidence:
-            class_id = int(detections[0, 0, i, 1])
-            class_name = classes[class_id]
+    for box in results.boxes:
+        class_id = int(box.cls[0])
+        confidence = float(box.conf[0])
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        class_name = model.names[class_id]
 
-            x1 = int(detections[0, 0, i, 3] * width)
-            y1 = int(detections[0, 0, i, 4] * height)
-            x2 = int(detections[0, 0, i, 5] * width)
-            y2 = int(detections[0, 0, i, 6] * height)
+        if confidence < min_confidence:
+            continue
 
-            cv2.rectangle(image, (x1, y1), (x2, y2), colors[class_id], 2)
-            cv2.putText(image, f"{class_name}: {confidence:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colors[class_id], 2)
+        color = (0, 255, 0)
+        cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(image, f"{class_name}: {confidence:.2f}", (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-            if class_name == "bird":
-                bird_detected = True
+        if class_name.lower() == "bird":
+            bird_detected = True
 
-    # Send to API if bird is detected and enough time passed
     current_time = time.time()
     if bird_detected and (current_time - last_capture_time) >= capture_interval:
         filename = f"bird_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]}.jpg"
@@ -92,10 +84,7 @@ while True:
 
         last_capture_time = current_time
 
-    # Show the video feed
-    cv2.imshow("Bird Detection Feed", image)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+# Optional live display (disabled for headless Pi use)
+# cv2.imshow("Bird Detection", image)
+# if cv2.waitKey(1) & 0xFF == ord('q'):
+#     break
