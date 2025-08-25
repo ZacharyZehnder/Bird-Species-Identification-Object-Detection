@@ -7,7 +7,7 @@
 This project demonstrates the design and implementation of a **real-time bird species detection and classification system** utilizing a **Raspberry Pi 5** with an **AI Camera Module**.  
 Captured video frames are processed by the **MobileNetSSD** model for bird detection. Confirmed detections are sent to the **Google Gemini API** for species classification. Results (species, timestamp, image) are stored in **Firebase Firestore** and displayed through a **web-based dashboard**.  
 
-The system achieved an **average latency of ~250 milliseconds** and an overall **species classification accuracy of 93%**.  
+The system achieved an **average latency of ~120 milliseconds** and an overall **species classification accuracy of 93%**.  
 **Development required 68 hours over an 11-week period.**  
 
 ---
