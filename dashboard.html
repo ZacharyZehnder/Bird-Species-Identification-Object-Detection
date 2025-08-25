@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bird Detector Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .results-scroll {
+            max-height: 20rem;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #3b82f6 #e5e7eb;
+        }
+        .results-scroll::-webkit-scrollbar {
+            width: 8px;
+        }
+        .results-scroll::-webkit-scrollbar-track {
+            background: #e5e7eb;
+            border-radius: 10px;
+        }
+        .results-scroll::-webkit-scrollbar-thumb {
+            background-color: #3b82f6;
+            border-radius: 10px;
+            border: 2px solid #e5e7eb;
+        }
+        .dark .results-scroll::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        .dark .results-scroll::-webkit-scrollbar-thumb {
+            background-color: #60a5fa;
+            border: 2px solid #1f2937;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 min-h-screen flex items-center justify-center">
+
+    <div class="container mx-auto max-w-4xl">
+        <div class="bg-white dark:bg-gray-800 shadow-xl rounded-2xl overflow-hidden p-8 transition-all duration-300">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <h1 class="text-4xl font-extrabold text-blue-600 dark:text-blue-400">Bird Detector Dashboard</h1>
+                <p class="mt-2 text-lg text-gray-600 dark:text-gray-400">
+                    Real-time monitoring of bird detections from the Raspberry Pi.
+                </p>
+            </div>
+
+            <!-- Dashboard sections -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Recent Sightings -->
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold">Recent Sightings</h3>
+                        <button id="refresh-sightings-button" class="bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded-full text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200">
+                            <svg id="refresh-loader-sightings" class="hidden animate-spin h-4 w-4 text-gray-600 dark:text-gray-300 inline-block mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Refresh
+                        </button>
+                    </div>
+                    <div id="sightings-container" class="space-y-4 results-scroll p-2 bg-gray-50 dark:bg-gray-700 rounded-xl">
+                        <p class="text-gray-500 dark:text-gray-400 text-center p-4">Loading sightings...</p>
+                    </div>
+                </div>
+
+                <!-- Historical Count -->
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold">Historical Counts</h3>
+                        <button id="refresh-historical-button" class="bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded-full text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200">
+                            <svg id="refresh-loader-historical" class="hidden animate-spin h-4 w-4 text-gray-600 dark:text-gray-300 inline-block mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Refresh
+                        </button>
+                    </div>
+                    <div id="historical-container" class="space-y-4 results-scroll p-2 bg-gray-50 dark:bg-gray-700 rounded-xl">
+                        <p class="text-gray-500 dark:text-gray-400 text-center p-4">Loading historical data...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error message -->
+            <div id="error-message" class="hidden mt-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl" role="alert">
+                <span id="error-text" class="block sm:inline"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API Endpoint for the FastAPI server
+        const API_URL = "http://127.0.0.1:8000";
+
+        // DOM Elements
+        const sightingsContainer = document.getElementById('sightings-container');
+        const historicalContainer = document.getElementById('historical-container');
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        const refreshSightingsButton = document.getElementById('refresh-sightings-button');
+        const refreshHistoricalButton = document.getElementById('refresh-historical-button');
+        const refreshLoaderSightings = document.getElementById('refresh-loader-sightings');
+        const refreshLoaderHistorical = document.getElementById('refresh-loader-historical');
+
+        // Helper function to show/hide sections
+        const showElement = (el) => el.classList.remove('hidden');
+        const hideElement = (el) => el.classList.add('hidden');
+        const showError = (message) => {
+            errorText.textContent = message;
+            showElement(errorMessage);
+        };
+        const hideError = () => hideElement(errorMessage);
+
+        // Function to create a recent sighting card
+        const createSightingCard = (species, timestamp, imageUrl) => {
+            const card = document.createElement('div');
+            card.className = 'bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm flex items-center space-x-4';
+            card.innerHTML = `
+                <img src="${imageUrl || 'https://via.placeholder.com/64?text=No+Image'}" alt="${species}" class="w-16 h-16 rounded-lg object-cover">
+
+                <div>
+                    <h4 class="font-bold text-lg">${species}</h4>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">${new Date(timestamp).toLocaleString()}</p>
+                </div>
+            `;
+            return card;
+        };
+
+        // Function to create a historical count card
+        const createHistoricalCard = (birdName, count) => {
+            const card = document.createElement('div');
+            card.className = 'bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm';
+            card.innerHTML = `
+                <h4 class="font-bold text-lg">${birdName}</h4>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Total Detections: <span class="font-bold text-blue-600 dark:text-blue-400">${count}</span></p>
+            `;
+            return card;
+        };
+
+        // Fetch recent sightings from the API
+        const fetchRecentSightings = async () => {
+            showElement(refreshLoaderSightings);
+            refreshSightingsButton.disabled = true;
+            try {
+                const response = await fetch(`${API_URL}/get-recent-sightings`);
+
+                if (!response.ok) throw new Error('Failed to fetch recent sightings');
+                const sightings = await response.json();
+                sightingsContainer.innerHTML = '';
+                if (sightings.length > 0) {
+                    sightings.forEach(sighting => {
+                        sightingsContainer.appendChild(createSightingCard(sighting.species, sighting.timestamp, sighting.image_url));
+                    });
+                } else {
+                    sightingsContainer.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-center p-4">No recent sightings.</p>';
+                }
+            } catch (error) {
+                console.error("Error fetching sightings:", error);
+                showError(`Error fetching sightings: ${error.message}. Please check your API.`);
+                sightingsContainer.innerHTML = '<p class="text-red-500 text-center p-4">Failed to load sightings.</p>';
+            } finally {
+                hideElement(refreshLoaderSightings);
+                refreshSightingsButton.disabled = false;
+            }
+        };
+
+        // Fetch historical counts from the API
+        const fetchHistoricalCounts = async () => {
+            showElement(refreshLoaderHistorical);
+            refreshHistoricalButton.disabled = true;
+            try {
+                const response = await fetch(`${API_URL}/get-bird-detections`);
+                if (!response.ok) throw new Error('Failed to fetch historical counts');
+                const result = await response.json();
+                const counts = result.detections;
+                historicalContainer.innerHTML = '';
+                if (counts.length > 0) {
+                    counts.forEach(count => {
+                        historicalContainer.appendChild(createHistoricalCard(count.class_name, count.count));
+                    });
+                } else {
+                    historicalContainer.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-center p-4">No historical data.</p>';
+                }
+            } catch (error) {
+                console.error("Error fetching historical counts:", error);
+                showError(`Error fetching historical counts: ${error.message}. Please check your API.`);
+                historicalContainer.innerHTML = '<p class="text-red-500 text-center p-4">Failed to load historical data.</p>';
+            } finally {
+                hideElement(refreshLoaderHistorical);
+                refreshHistoricalButton.disabled = false;
+            }
+        };
+
+        // Event Listeners for manual refresh buttons
+        refreshSightingsButton.addEventListener('click', fetchRecentSightings);
+        refreshHistoricalButton.addEventListener('click', fetchHistoricalCounts);
+        
+        // Initial data fetch and set up auto-refresh
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchRecentSightings();
+            fetchHistoricalCounts();
+            // Auto-refresh every 5 seconds
+            setInterval(fetchRecentSightings, 5000);
+            setInterval(fetchHistoricalCounts, 5000);
+        });
+    </script>
+</body>
+</html>

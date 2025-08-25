@@ -1,0 +1,4 @@
+pip install fastapi uvicorn opencv-python-headless firebase-admin google-generativeai pillow numpy pydantic
+pip install fastapi uvicorn pillow opencv-python numpy firebase-admin google-generativeai ultralytics
+
+uvicorn API_Final:app  --host 0.0.0.0 --port 8000
